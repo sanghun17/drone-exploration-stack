@@ -3,6 +3,8 @@ ros_ws/build/
 ros_ws/devel/
 ros_ws/install/
 ros_ws/.catkin_workspace
+# catkin_init_workspace symlink into /opt/ros (generated, environment-specific)
+ros_ws/src/CMakeLists.txt
 third_party/Livox-SDK2/build/
 third_party/Livox-SDK2/install/
 
