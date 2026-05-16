@@ -17,13 +17,45 @@ ENV ROS_DISTRO=noetic
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake git wget curl ca-certificates \
         iputils-ping net-tools usbutils iproute2 \
-        libeigen3-dev libpcl-dev libyaml-cpp-dev \
+        libeigen3-dev libpcl-dev libyaml-cpp-dev libfmt-dev \
         libgeographic-dev geographiclib-tools \
         python3-catkin-tools python3-rosdep \
         ros-noetic-pcl-ros ros-noetic-pcl-conversions ros-noetic-eigen-conversions \
+        ros-noetic-cv-bridge ros-noetic-image-transport ros-noetic-cmake-modules \
+        ros-noetic-rviz ros-noetic-geometry ros-noetic-tf2-geometry-msgs \
+        libopencv-dev libarmadillo-dev qtbase5-dev \
         ros-noetic-mavlink ros-noetic-mavros ros-noetic-mavros-extras \
     && geographiclib-get-geoids egm96-5 \
     && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------------------
+# Sophus — environment dependency for FAST-LIVO2 (slam_planning layer).
+#
+# FAST-LIVO2 + rpg_vikit require the NON-templated / double-only Sophus
+# (strasdat @ a621ff): it builds a real libSophus.so and ships sophus/se3.h
+# (the modern header-only Sophus has neither, and would not link). This is a
+# pinned, unmodified upstream env lib (not source we iterate on), so it is
+# baked into the image like libpcl/libeigen — keeping the bind-mounted dev
+# loop fast. Pattern follows the canonical rosblox/ros-fast-livo Dockerfile.
+#
+# a621ff does not compile on Ubuntu 20.04 / GCC 9 as-is; two minimal,
+# upstream-agnostic build fixes are applied (see patches/sophus-a621ff-ubuntu20.patch):
+#   * so2.cpp ctor: std::complex::real()/imag() are not lvalues in C++11+
+#   * drop -Werror so newer Eigen/GCC warnings don't fail the build
+# /opt/Sophus is kept so the build-tree SophusConfig (registered via
+# export(PACKAGE Sophus) into /root/.cmake) resolves at catkin time.
+# ---------------------------------------------------------------------------
+RUN git clone https://github.com/strasdat/Sophus.git /opt/Sophus \
+    && cd /opt/Sophus \
+    && git checkout a621ff \
+    && sed -i 's|unit_complex_\.real() = 1\.;|unit_complex_ = std::complex<double>(1., 0.);|' sophus/so2.cpp \
+    && sed -i '/unit_complex_\.imag() = 0\.;/d' sophus/so2.cpp \
+    && sed -i 's/ -Werror//g' CMakeLists.txt \
+    && mkdir build && cd build \
+    && cmake .. -DCMAKE_BUILD_TYPE=Release >/dev/null \
+    && make -j"$(nproc)" \
+    && make install \
+    && ldconfig
 
 COPY docker/ros_entrypoint.sh /ros_entrypoint.sh
 RUN chmod +x /ros_entrypoint.sh

@@ -1,30 +1,38 @@
-# slam_planning — SCAFFOLD (not yet integrated)
+# slam_planning — notes on the SLAM / planning layer
 
-This directory is a placeholder for the SLAM + planning layer that consumes the
-Mid-360 point cloud / IMU produced by this stack.
+This directory holds **notes only**. The actual SLAM + planning code is not
+kept here — following this stack's convention, external catkin source is
+cloned into `ros_ws/src/`, pinned, and gitignored (see the top-level README
+[SLAM / planning](../README.md#slam--planning) section).
 
-Status: **not implemented yet.** The lidar driver layer (Docker env, patched
-Livox-SDK2 for Mid-360S, `livox_ros_driver2`) is working and verified
-(`/livox/lidar` @ 10 Hz, `/livox/imu` @ 200 Hz). The components below are the
-intended next steps and have **not** been added or tested.
+## What runs the SLAM / planning layer
 
-## Planned components
+| Piece | Where it comes from | Lives in |
+|-------|---------------------|----------|
+| FAST-LIVO2 (`fast_livo`) — LiDAR-inertial-visual odometry | `scripts/clone_fastlivo.sh` → `sanghun17/fast_livo2_custom@main` | `ros_ws/src/fast_livo2_custom/` (gitignored) |
+| rpg_vikit (`vikit_common`, `vikit_ros`) — FAST-LIVO2 dep | `scripts/clone_fastlivo.sh` → `xuankuzcr/rpg_vikit@master` | `ros_ws/src/rpg_vikit/` (gitignored) |
+| Sophus `a621ff` — FAST-LIVO2 dep (`libSophus.so`) | baked into the env image | `docker/Dockerfile` → `/opt/Sophus`, installed to `/usr/local` |
+| EPIC planner | `scripts/clone_epic.sh` → `sanghun17/EPIC_poongsan@jetson-orin-agx` | `ros_ws/src/EPIC_poongsan/` (gitignored) |
 
-| Component | Role | Intended integration |
-|-----------|------|-----------------------|
-| FAST-LIVO (FAST-LIVO2) | LiDAR-inertial-visual odometry / SLAM, consumes `/livox/lidar` + `/livox/imu` | git submodule under `slam_planning/`, built in the same catkin workspace |
-| EPIC planner | Local planning on the SLAM map/odometry | git submodule under `slam_planning/`, built in the same catkin workspace |
+## How it builds
 
-## How they will slot in
+`build_workspace.sh` builds the patched Livox-SDK2, then
+`livox_ros_driver2/build.sh ROS1` `catkin_make`s the **whole** `ros_ws/src` —
+so once cloned, FAST-LIVO2 + rpg_vikit + EPIC build in dependency order with no
+extra steps. The dev loop is unchanged: edit on host, rebuild in-container, no
+image rebuilds (image rebuilds are only for environment changes such as
+Sophus / apt deps in `docker/Dockerfile`).
 
-- Add each as a `git submodule` (this repo's convention for external code),
-  pinned to a known-good commit.
-- FAST-LIVO subscribes to `/livox/lidar` (livox custom msg) + `/livox/imu`.
-  Confirm the point type / topic names match its config.
-- Build inside the same dev container via `scripts/build_workspace.sh`
-  (extend it to `catkin build` these packages after the driver).
-- Keep the dev loop unchanged: edit on host, `catkin build` in-container, no
-  image rebuilds.
+```bash
+bash scripts/clone_fastlivo.sh                                  # host: FAST-LIVO2 + rpg_vikit
+bash scripts/clone_epic.sh                                      # host: EPIC
+docker compose exec dev bash /work/scripts/build_workspace.sh   # container: build all
+```
 
-> Upstream repository URLs are intentionally left for the maintainer to fill in
-> (to pin the exact forks/commits you want) — see the top-level README.
+## Open follow-up (runtime, not build)
+
+FAST-LIVO2 subscribes to the **v1** `livox_ros_driver/CustomMsg` type, while
+`livox_ros_driver2` publishes `livox_ros_driver2/CustomMsg`. The message
+bodies are identical but the ROS type name / MD5 differs, so a subscriber will
+not connect without a bridge or a republish. This is purely a topic-wiring
+task and is independent of the Docker build integration, which is complete.

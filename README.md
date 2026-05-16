@@ -5,8 +5,9 @@ Dockerized aerial-autonomy stack on **ROS Noetic / Ubuntu 20.04**:
 - **Livox Mid-360S** LiDAR — with a patched Livox-SDK2 (stock SDK does not work
   with Mid-360**S** units; see [Mid-360S notes](#the-mid-360s-problem)).
 - **PX4 / MAVROS** (installed, link not yet verified — see [Status](#status)).
-- **FAST-LIVO + EPIC planner** — scaffolded, not yet integrated
-  (`slam_planning/`).
+- **FAST-LIVO2** (LiDAR-inertial-visual odometry) + **EPIC planner** — cloned
+  into the catkin workspace and built alongside the driver (pinned, gitignored;
+  see [SLAM / planning](#slam--planning)).
 
 Multi-target by design: **nuc (x86_64)** now, **jetson (arm64)** later. The
 base image is multi-arch; nothing here is x86-only.
@@ -37,10 +38,19 @@ sudo bash scripts/livox_net_setup.sh enp4s0 192.168.1.5
 ### 2. Dev container (env-only image, mounted source)
 
 ```bash
+# (optional) clone the SLAM / planner source into ros_ws/src — pinned, gitignored
+bash scripts/clone_fastlivo.sh                        # FAST-LIVO2 + rpg_vikit
+bash scripts/clone_epic.sh                            # EPIC planner
+
 cd docker
 docker compose up -d                                  # build env image, start long-lived container
-docker compose exec dev bash /work/scripts/build_workspace.sh   # one-time: build patched SDK2 + driver
+docker compose exec dev bash /work/scripts/build_workspace.sh   # one-time: patched SDK2 + driver + (if cloned) FAST-LIVO2 + EPIC
 ```
+
+The env image carries the FAST-LIVO2 build environment (Sophus `a621ff`,
+`cv_bridge`, `image_transport`, …). `build_workspace.sh` `catkin_make`s the
+**whole** `ros_ws/src`, so anything cloned in is built in dependency order.
+Skip the clone steps and only the lidar driver builds — nothing else breaks.
 
 ### 3. Run the lidar + verify
 
@@ -111,14 +121,42 @@ lidar even though data is flowing. Override with `ROS_MASTER_PORT=11311`.
 ## Layout
 
 ```
-docker/        env-only Dockerfile (multi-arch) + compose (dev loop) + entrypoint
-scripts/       livox_net_setup.sh (host) · build_workspace.sh · run_driver.sh (container)
+docker/        env-only Dockerfile (multi-arch, incl. Sophus) + compose + entrypoint
+scripts/       livox_net_setup.sh (host) · clone_fastlivo.sh / clone_epic.sh (host)
+               build_workspace.sh · run_driver.sh (container)
 config/        MID360_config.json  (host IP 192.168.1.5, lidar 192.168.1.188)
-patches/       livox-sdk2-mid360s-devtype.patch  (the Mid-360S fix, for reference)
+patches/       livox-sdk2-mid360s-devtype.patch · sophus-a621ff-ubuntu20.patch
 third_party/   Livox-SDK2  (vendored, PATCHED for Mid-360S)
 ros_ws/src/    livox_ros_driver2  (vendored, unmodified, ROS1)
-slam_planning/ FAST-LIVO + EPIC planner — SCAFFOLD only (see its README)
+               fast_livo2_custom · rpg_vikit · EPIC_poongsan  (cloned, gitignored)
+slam_planning/ notes on the SLAM / planning layer (see its README)
 ```
+
+## SLAM / planning
+
+FAST-LIVO2 and the EPIC planner are **external catkin source**, not vendored
+here (same convention as the rest of the SLAM layer): each is cloned into
+`ros_ws/src/`, pinned, and gitignored.
+
+| Repo | Clone script | Pin | Catkin package(s) |
+|------|--------------|-----|-------------------|
+| [`sanghun17/fast_livo2_custom`](https://github.com/sanghun17/fast_livo2_custom) | `clone_fastlivo.sh` | `main` | `fast_livo` |
+| [`xuankuzcr/rpg_vikit`](https://github.com/xuankuzcr/rpg_vikit) (FAST-LIVO2 fork) | `clone_fastlivo.sh` | `master` | `vikit_common`, `vikit_ros` |
+| [`sanghun17/EPIC_poongsan`](https://github.com/sanghun17/EPIC_poongsan) | `clone_epic.sh` | `jetson-orin-agx` | EPIC planner stack |
+
+**Sophus** is the third FAST-LIVO2 dependency. Unlike the above it is a pinned,
+unmodified env library (strasdat `a621ff`, the non-templated/double-only build
+that ships `libSophus.so` + `sophus/se3.h`), so it is **baked into the image**
+(`docker/Dockerfile`) like libpcl/libeigen — not cloned — to keep the dev loop
+fast. `a621ff` needs two minimal Ubuntu-20.04/GCC-9 build fixes, recorded in
+`patches/sophus-a621ff-ubuntu20.patch`.
+
+> **Runtime caveat:** `livox_ros_driver2` publishes `/livox/lidar` as
+> `livox_ros_driver2/CustomMsg`, but FAST-LIVO2 subscribes to the v1
+> `livox_ros_driver/CustomMsg` type (different message MD5 → no connection).
+> This is a topic-wiring concern, **not** a build one — the Docker build
+> integration here is independent of it. Bridge/republish wiring is a separate
+> follow-up.
 
 ## Status
 
@@ -129,8 +167,9 @@ slam_planning/ FAST-LIVO + EPIC planner — SCAFFOLD only (see its README)
 | Multi-arch (nuc x86 now / jetson arm later) | ✅ supported (buildx) |
 | Host net setup script (reboot-safe IP, runtime broadcast route) | ✅ working |
 | PX4 / MAVROS link | ⏳ MAVROS installed, **not yet tested** (FC not connected) |
-| FAST-LIVO integration | ⏳ scaffold only |
-| EPIC planner integration | ⏳ scaffold only |
+| FAST-LIVO2 builds in the image (Sophus + vikit + fast_livo) | ✅ integrated (clone + build) |
+| FAST-LIVO2 ↔ Mid-360 runtime topic wiring (CustomMsg type) | ⏳ follow-up |
+| EPIC planner integration | ⏳ cloned, builds with workspace |
 | NM dispatcher hook (auto broadcast route on boot) | ⏳ TODO |
 
 ## Licenses / credits
@@ -139,3 +178,12 @@ slam_planning/ FAST-LIVO + EPIC planner — SCAFFOLD only (see its README)
 [Livox-SDK](https://github.com/Livox-SDK) (MIT). Livox-SDK2 is **modified** —
 the Mid-360S `dev_type` normalization; original `LICENSE.txt` retained, change
 documented in `patches/`.
+
+SLAM / planning source is fetched at clone time, not redistributed here:
+[FAST-LIVO2](https://github.com/hku-mars/FAST-LIVO2) (**GPLv2**),
+[rpg_vikit](https://github.com/xuankuzcr/rpg_vikit), and
+[EPIC](https://github.com/SYSU-STAR/EPIC) (GPLv3) keep their own licenses.
+Sophus ([strasdat](https://github.com/strasdat/Sophus), MIT) is built in the
+image from upstream `a621ff` with only the Ubuntu-20.04 build fixes in
+`patches/sophus-a621ff-ubuntu20.patch`. Note FAST-LIVO2's GPLv2 terms before
+redistributing any image that bakes it in.

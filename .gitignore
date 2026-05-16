@@ -8,6 +8,12 @@ ros_ws/src/CMakeLists.txt
 third_party/Livox-SDK2/build/
 third_party/Livox-SDK2/install/
 
+# externally-cloned source — pinned, not vendored into this repo
+# (scripts/clone_epic.sh · scripts/clone_fastlivo.sh)
+ros_ws/src/EPIC_poongsan/
+ros_ws/src/fast_livo2_custom/
+ros_ws/src/rpg_vikit/
+
 # logs
 *.log
 **/log/
