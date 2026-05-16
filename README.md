@@ -1,4 +1,4 @@
-# drone-perception-stack
+# drone-exploration-stack
 
 Dockerized aerial-autonomy stack on **ROS Noetic / Ubuntu 20.04**:
 
@@ -59,7 +59,7 @@ image rebuilds** for source changes — only for environment changes
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -f docker/Dockerfile -t drone-perception-stack:noetic ..
+  -f docker/Dockerfile -t drone-exploration-stack:noetic ..
 ```
 
 ---
