@@ -1,0 +1,23 @@
+# Dev loop: env-only image + bind-mounted source. Edit on host, build in the
+# long-lived container with catkin — no image rebuilds for code changes.
+#
+#   cd docker && docker compose up -d
+#   docker compose exec dev bash /work/scripts/build_workspace.sh   # once
+#   docker compose exec dev bash /work/scripts/run_driver.sh        # stream lidar
+
+services:
+  dev:
+    build:
+      context: ..                       # repo root, so Dockerfile can COPY docker/
+      dockerfile: docker/Dockerfile
+    image: drone-perception-stack:noetic
+    container_name: dps-dev
+    network_mode: host                  # Mid-360 + MAVROS UDP; host IP 192.168.1.5/enp4s0
+    privileged: true                    # serial access for the PX4 flight controller
+    volumes:
+      - ..:/work                        # whole repo: ros_ws, third_party, scripts, config
+    working_dir: /work
+    environment:
+      - DISPLAY=${DISPLAY:-}
+      - QT_X11_NO_MITSHM=1
+    command: ["sleep", "infinity"]

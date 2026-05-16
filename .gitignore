@@ -1,0 +1,17 @@
+# catkin / cmake build artifacts
+ros_ws/build/
+ros_ws/devel/
+ros_ws/install/
+ros_ws/.catkin_workspace
+third_party/Livox-SDK2/build/
+third_party/Livox-SDK2/install/
+
+# logs
+*.log
+**/log/
+
+# editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
