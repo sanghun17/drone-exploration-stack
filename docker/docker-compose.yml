@@ -10,7 +10,7 @@ services:
     build:
       context: ..                       # repo root, so Dockerfile can COPY docker/
       dockerfile: docker/Dockerfile
-    image: drone-perception-stack:noetic
+    image: drone-exploration-stack:noetic
     container_name: dps-dev
     network_mode: host                  # Mid-360 + MAVROS UDP; host IP 192.168.1.5/enp4s0
     privileged: true                    # serial access for the PX4 flight controller
