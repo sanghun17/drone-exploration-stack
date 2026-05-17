@@ -14,6 +14,9 @@ ros_ws/src/EPIC_poongsan/
 ros_ws/src/fast_livo2_custom/
 ros_ws/src/rpg_vikit/
 
+# generated from config/MID360_config.json.in + config/stack.env
+config/MID360_config.json
+
 # logs
 *.log
 **/log/

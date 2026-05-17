@@ -1,8 +1,9 @@
 # Environment ONLY: Ubuntu 20.04 + ROS Noetic + MAVROS + build deps.
 #
-# Source (Livox-SDK2, livox_ros_driver2, SLAM/planner) is NOT baked in — it is
+# App source (livox_ros_driver2, SLAM/planner) is NOT baked in — it is
 # bind-mounted and built inside the running container, so iterating on code does
-# not require an image rebuild.
+# not require an image rebuild. Pinned env deps (Sophus, the PATCHED Livox-SDK2)
+# ARE baked, so they survive container recreate (see KNOWN_ISSUES.md #2).
 #
 # Multi-target: the ros:noetic-ros-base-focal base is multi-arch, so the same
 # Dockerfile builds for nuc (x86_64) now and jetson (arm64) later via
@@ -52,6 +53,26 @@ RUN git clone https://github.com/strasdat/Sophus.git /opt/Sophus \
     && sed -i '/unit_complex_\.imag() = 0\.;/d' sophus/so2.cpp \
     && sed -i 's/ -Werror//g' CMakeLists.txt \
     && mkdir build && cd build \
+    && cmake .. -DCMAKE_BUILD_TYPE=Release >/dev/null \
+    && make -j"$(nproc)" \
+    && make install \
+    && ldconfig
+
+# ---------------------------------------------------------------------------
+# Patched Livox-SDK2 — environment dependency for livox_ros_driver2.
+#
+# The repo vendors a PATCHED Livox-SDK2 (third_party/Livox-SDK2) with the
+# Mid-360S `dev_type 35->9` fix in sdk_core/device_manager.cpp. It is a pinned,
+# patched env lib (not code we iterate on) so it is baked here like Sophus.
+#
+# Why baked (not built at runtime): build_workspace.sh used to `make install`
+# it into the container's /usr/local/lib at runtime — which is wiped on every
+# container recreate, silently breaking a working lidar (KNOWN_ISSUES.md #2).
+# Baking it makes it recreate-safe and portable to the Jetson.
+# ---------------------------------------------------------------------------
+COPY third_party/Livox-SDK2 /opt/Livox-SDK2
+RUN cd /opt/Livox-SDK2 \
+    && rm -rf build && mkdir build && cd build \
     && cmake .. -DCMAKE_BUILD_TYPE=Release >/dev/null \
     && make -j"$(nproc)" \
     && make install \

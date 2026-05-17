@@ -22,48 +22,49 @@ frame `livox_frame`), measured with `rostopic hz` on an isolated ROS master.
 
 ## Quick start
 
-### 1. Host network (once per machine, and after every reboot)
+After `git clone`: **edit one config, run one script, then one command per node.**
 
-The Mid-360 is Ethernet-only on `192.168.1.0/24`. On a machine with a second
-NIC (internet), the lidar NIC needs a static IP **and** a broadcast-route fix:
-
-```bash
-sudo bash scripts/livox_net_setup.sh enp4s0 192.168.1.5
-```
-
-`enp4s0` = the NIC cabled to the lidar, `192.168.1.5` = host IP (must match
-`host_net_info` in `config/MID360_config.json`). See
-[networking](#networking-multi-homed-host) for *why*.
-
-### 2. Dev container (env-only image, mounted source)
+### 1. Configure — the only file you edit
 
 ```bash
-# (optional) clone the SLAM / planner source into ros_ws/src — pinned, gitignored
-bash scripts/clone_fastlivo.sh                        # FAST-LIVO2 + rpg_vikit
-bash scripts/clone_epic.sh                            # EPIC planner
-
-cd docker
-docker compose up -d                                  # build env image, start long-lived container
-docker compose exec dev bash /work/scripts/build_workspace.sh   # one-time: patched SDK2 + driver + (if cloned) FAST-LIVO2 + EPIC
+$EDITOR config/stack.env      # HOST_IP, LIDAR_IP, FCU_URL, ROS_MASTER_PORT
 ```
 
-The env image carries the FAST-LIVO2 build environment (Sophus `a621ff`,
-`cv_bridge`, `image_transport`, …). `build_workspace.sh` `catkin_make`s the
-**whole** `ros_ws/src`, so anything cloned in is built in dependency order.
-Skip the clone steps and only the lidar driver builds — nothing else breaks.
+The lidar-facing NIC is **auto-detected** (you don't set it) and there is **no
+host network script and no sudo**: the container is privileged +
+`network_mode host`, so `docker/ros_entrypoint.sh` puts `HOST_IP` on the lidar
+NIC itself on every start (portable to the Jetson). The broadcast route is not
+needed — see [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) #1.
 
-### 3. Run the lidar + verify
+### 2. Bootstrap — once
 
 ```bash
-docker compose exec dev bash /work/scripts/run_driver.sh        # streams on isolated master :11399
-# in another shell:
-docker compose exec dev bash -lc 'export ROS_MASTER_URI=http://localhost:11399; \
-  source /work/ros_ws/devel/setup.bash; rostopic hz /livox/lidar'
+bash scripts/setup.sh
 ```
 
-Code changes → just re-run `build_workspace.sh` (catkin) in the container. **No
-image rebuilds** for source changes — only for environment changes
-(`docker/Dockerfile`).
+Builds the image (ROS Noetic + MAVROS + Sophus + **patched Livox-SDK2**, all
+baked so they survive container recreate), starts the dev container,
+auto-clones EPIC + FAST-LIVO2 + rpg_vikit, generates `MID360_config.json` from
+`stack.env`, and catkin-builds the whole workspace.
+
+### 3. Run each node — one host command each
+
+```bash
+bash scripts/run_lidar.sh        # Livox Mid-360 driver
+bash scripts/run_fastlivo.sh     # FAST-LIVO2 (LIO)
+bash scripts/run_epic.sh         # EPIC planner
+bash scripts/run_mavros.sh       # PX4 MAVROS
+bash scripts/run_rviz.sh         # RViz (integrated view)
+```
+
+Each `run_*.sh` auto-jumps into the dev container and shares the isolated ROS
+master `:11399`. Change IPs/serial → edit `config/stack.env`, re-run
+`scripts/run_lidar.sh`. Code changes → re-run `scripts/setup.sh`. **No image
+rebuilds** for source changes — only for env changes (`docker/Dockerfile`).
+
+> ⚠️ Open issue: `/livox/lidar` may publish no points (IMU works) — lidar &
+> network are proven fine; under investigation in the Livox SDK/driver layer.
+> See [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) #1.
 
 ### Multi-arch build (for the jetson target later)
 
@@ -98,33 +99,35 @@ Normal → data channels) and data streams normally.
 
 ## Networking (multi-homed host)
 
-The host has two NICs: one to the internet, one to the lidar — this is
-*multi-homed*. Livox device discovery uses **limited broadcast
-`255.255.255.255`**. With two NICs, Linux sends that out the **default-route
-NIC (the internet one)** by default, so the lidar never hears it.
-`scripts/livox_net_setup.sh` fixes both problems:
-
-| Fix | Persists reboot? |
-|-----|------------------|
-| Static IP on the lidar NIC (NetworkManager profile `livox-mid360`) | **Yes** |
-| `ip route replace 255.255.255.255/32 dev <iface>` (pin broadcast to lidar NIC) | **No** — re-run the script after reboot, or install an NM dispatcher hook (TODO) |
+The host has two NICs: one to the internet, one to the lidar (*multi-homed*).
+The Mid-360 unicasts to a fixed host IP, so the lidar NIC just needs
+`HOST_IP/24`. The container does this itself at startup (privileged +
+`network_mode host`) — **no sudo, no host script**. The limited-broadcast
+`255.255.255.255` route was long assumed necessary but diagnostics proved it
+**irrelevant** to the unicast config (see [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)
+#1); only the static IP matters. `scripts/livox_net_setup.sh` remains as an
+**optional** bare-metal-only helper (persistent NM profile) for running the
+lidar without the container.
 
 ## Isolated ROS master (important)
 
-`scripts/run_driver.sh` starts its own roscore on **:11399**. If another
-roscore is running on the host (e.g. a simulation with `/use_sim_time` +
-`/clock`), joining it silently breaks `rostopic hz` and TF for the *real*
-lidar even though data is flowing. Override with `ROS_MASTER_PORT=11311`.
+Every `scripts/run_*.sh` shares one roscore on **:11399** (from
+`config/stack.env`). It is deliberately not the default `:11311` so the real
+stack never joins a stray sim roscore (`/use_sim_time` + `/clock`), which
+silently breaks `rostopic hz`/TF. Override via `ROS_MASTER_PORT` in
+`config/stack.env`.
 
 ---
 
 ## Layout
 
 ```
-docker/        env-only Dockerfile (multi-arch, incl. Sophus) + compose + entrypoint
-scripts/       livox_net_setup.sh (host) · clone_fastlivo.sh / clone_epic.sh (host)
-               build_workspace.sh · run_driver.sh (container)
-config/        MID360_config.json  (host IP 192.168.1.5, lidar 192.168.1.188)
+docker/        Dockerfile (multi-arch; bakes Sophus + patched Livox-SDK2) + compose + entrypoint
+scripts/       setup.sh (one-time bootstrap, host)
+               run_{lidar,fastlivo,epic,mavros,rviz}.sh  (host, one per node)
+               build_workspace.sh · clone_{epic,fastlivo}.sh · livox_net_setup.sh (optional)
+config/        stack.env (the only file you edit) · MID360_config.json.in (template;
+               MID360_config.json is generated from it + stack.env, gitignored)
 patches/       livox-sdk2-mid360s-devtype.patch · sophus-a621ff-ubuntu20.patch
 third_party/   Livox-SDK2  (vendored, PATCHED for Mid-360S)
 ros_ws/src/    livox_ros_driver2  (vendored, unmodified, ROS1)

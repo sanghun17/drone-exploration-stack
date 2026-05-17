@@ -1,19 +1,19 @@
 #!/bin/bash
-# Host-side network setup for the Livox Mid-360(S). Run on the HOST, ONCE per
-# machine (root). It is now PERSISTENT — you do NOT run it after every reboot:
+# OPTIONAL bare-metal helper — NOT part of the normal Docker workflow.
+#
+# In the Docker workflow you do NOT run this: the dev container is privileged +
+# network_mode host, so docker/ros_entrypoint.sh puts HOST_IP on the lidar NIC
+# itself on every start (no sudo, no host script, portable). And diagnostics
+# proved the 255.255.255.255 broadcast route is irrelevant to the unicast
+# Mid-360 config (KNOWN_ISSUES.md #1) — only the static IP matters.
+#
+# Use this ONLY if you run the lidar bare-metal (no container) and want a
+# persistent NetworkManager profile instead:
 #
 #   sudo bash scripts/livox_net_setup.sh [IFACE] [HOST_IP]
 #
-# Why this is needed
-#   The Mid-360 streams over Ethernet on 192.168.1.0/24 to a fixed host IP. On
-#   a multi-homed machine (one NIC to the internet, one to the lidar) two
-#   things break by default:
-#     1. The lidar NIC has no IP on the lidar subnet.
-#     2. Livox uses limited broadcast 255.255.255.255, which the kernel sends
-#        out the DEFAULT-ROUTE NIC (the internet one), not the lidar NIC.
-#   BOTH fixes are now baked into a persistent NetworkManager profile, so
-#   NetworkManager re-applies them automatically on every boot / cable
-#   re-plug. No per-reboot script, no NM dispatcher hook needed.
+# It writes one persistent NM profile (static IP + broadcast route),
+# auto-detecting the lidar NIC; survives reboots, no per-reboot re-run.
 #
 # IFACE auto-detects (lidar-subnet NIC -> livox profile NIC -> non-default
 # wired NIC -> enp4s0). Override with arg 1. HOST_IP must match

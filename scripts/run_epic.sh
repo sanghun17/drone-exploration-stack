@@ -1,8 +1,6 @@
 #!/bin/bash
-# MAVROS against the PX4 flight controller.  Run from the HOST:
-#   bash scripts/run_mavros.sh
-# (auto-jumps into the dev container; one uniform command per node.)
-# FCU_URL + ROS_MASTER_PORT come from config/stack.env.
+# EPIC planner (consumes FAST-LIVO2).  Run from the HOST:  bash scripts/run_epic.sh
+# Trigger exploration with a 2D Nav Goal in RViz (Fixed Frame camera_init).
 set -e
 
 if [ ! -f /.dockerenv ]; then
@@ -16,7 +14,6 @@ fi
 . /work/config/stack.env
 PORT="${ROS_MASTER_PORT:-11399}"
 export ROS_MASTER_URI="http://localhost:${PORT}"
-FCU_URL="${FCU_URL:-/dev/ttyUSB0:921600}"
 source /opt/ros/noetic/setup.bash
 source /work/ros_ws/devel/setup.bash
 
@@ -25,5 +22,4 @@ if ! pgrep -f "roscore -p ${PORT}" >/dev/null 2>&1; then
   sleep 4
 fi
 
-# px4.launch = PX4-flavoured MAVROS launch; gcs_url empty (onboard companion).
-exec roslaunch mavros px4.launch fcu_url:="${FCU_URL}" gcs_url:=""
+exec roslaunch /work/slam_planning/epic/epic_mid360_lio.launch
