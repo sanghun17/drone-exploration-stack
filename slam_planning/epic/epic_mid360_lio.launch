@@ -1,0 +1,46 @@
+<launch>
+  <!-- EPIC <- FAST-LIVO2 (LIO-only), Livox Mid-360.
+
+       Grounded in the prior code (not guessed):
+       * FAST-LIVO2 LIVMapper.cpp:1338-1352 — odom header.frame_id="camera_init",
+         child="aft_mapped"; it BROADCASTS tf camera_init->aft_mapped itself;
+         /cloud_registered is also in camera_init. It only publishes
+         /aft_mapped_to_init (there is no /aft_mapped_to_odom).
+       * EPIC lidar_map_interface.cpp:126 — map_frame is taken FROM the odom
+         message header (adopts camera_init); sim_lio.cpp:67 — cloud_frame ==
+         map_frame => identity, no tf lookup.
+       => For LIO-only NO custom TF bridge is needed. The README's
+          smart_static_tf_bridge.py was camera_link->camera_init (camera path
+          only), irrelevant without the D455.
+
+       The ONLY wiring change vs EPIC's own d455.launch is the odom topic
+       name: EPIC subscribes /aft_mapped_to_odom (config/d455.yaml) but
+       FAST-LIVO2 publishes /aft_mapped_to_init. A top-level <remap> before
+       the <include> rewrites it for every node in d455.launch. We do NOT
+       edit the gitignored EPIC clone; this wrapper lives in the tracked
+       stack repo.
+
+       Run inside dps-dev, shared master :11399, with the Mid-360 driver +
+       FAST-LIVO2 (slam_planning/fastlivo/mapping_mid360_lio.launch) already up:
+         export ROS_MASTER_URI=http://localhost:11399
+         source /work/ros_ws/devel/setup.bash
+         roslaunch /work/slam_planning/epic/epic_mid360_lio.launch
+       Trigger exploration (frame MUST be camera_init):
+         rostopic pub -1 /move_base_simple/goal geometry_msgs/PoseStamped \
+           "{header:{frame_id: 'camera_init'}, pose:{position:{x: 2.0, y: 0.0, z: 1.0}, orientation:{w: 1.0}}}"
+  -->
+
+  <!-- exploration_node reads odometry_topic from d455.yaml (=/aft_mapped_to_odom)
+       and subscribes globally; this top-level remap points it at FAST-LIVO2. -->
+  <remap from="/aft_mapped_to_odom" to="/aft_mapped_to_init" />
+
+  <!-- traj_server uses a PRIVATE NodeHandle ("~") and does
+       getParam("odometry_topic") (traj_server.cpp:346,350). d455.yaml is
+       loaded into exploration_node's private ns, so traj_server never sees
+       it and subscribes to a bogus empty topic -> no /planning/pos_cmd.
+       Inject the param by absolute name so traj_server gets odometry
+       straight from FAST-LIVO2. -->
+  <param name="/traj_server/odometry_topic" value="/aft_mapped_to_init" />
+
+  <include file="$(find epic_planner)/launch/d455.launch" />
+</launch>

@@ -1,0 +1,104 @@
+# FAST-LIVO2 — Livox Mid-360, LIO-ONLY (no camera), Mid-360 INTERNAL IMU.
+#
+# Derived from fast_livo2_custom/config/avia.yaml. This file lives in the
+# tracked stack repo (NOT in the gitignored fast_livo2_custom clone) so it
+# survives scripts/clone_fastlivo.sh and is portable across machines.
+#
+# Deltas vs avia.yaml (only what's needed for Mid-360 LIO):
+#   * common.img_en        1 -> 0      (LiDAR-inertial only; no camera/VIO)
+#   * extrin_calib T/R     Avia -> Mid-360 built-in IMU<-LiDAR extrinsic
+#                          (Livox Mid-360 nominal: T=[-0.011,-0.02329,0.04412], R=I)
+#   * preprocess.blind     0.8 -> 0.5  (Mid-360 usable near range)
+#   * lidar_type stays 1   (Mid-360 streams livox_ros_driver2 CustomMsg, like Avia)
+#   * imu_topic stays /livox/imu, lid_topic /livox/lidar (Mid-360 driver defaults)
+
+common:
+  img_topic: "/left_camera/image"   # unused (img_en:0); kept for schema parity
+  lid_topic: "/livox/lidar"
+  imu_topic: "/livox/imu"           # Mid-360 INTERNAL IMU
+  img_en: 0                         # <-- LIO only
+  lidar_en: 1
+  ros_driver_bug_fix: false
+
+extrin_calib:
+  # Mid-360 built-in IMU -> LiDAR extrinsic (Livox nominal for Mid-360).
+  extrinsic_T: [-0.011, -0.02329, 0.04412]
+  extrinsic_R: [1, 0, 0, 0, 1, 0, 0, 0, 1]
+  # Camera-LiDAR (unused with img_en:0; left as avia defaults).
+  Rcl: [0.00610193,-0.999863,-0.0154172,
+        -0.00615449,0.0153796,-0.999863,
+        0.999962,0.00619598,-0.0060598]
+  Pcl: [0.0194384, 0.104689,-0.0251952]
+
+time_offset:
+  imu_time_offset: 0.0
+  img_time_offset: 0.1
+  exposure_time_init: 0.0
+
+preprocess:
+  point_filter_num: 1
+  filter_size_surf: 0.1
+  lidar_type: 1                     # Livox CustomMsg (Mid-360, same as Avia)
+  scan_line: 6
+  blind: 0.5                        # Mid-360 near range
+
+vio:                                # unused with img_en:0
+  max_iterations: 5
+  outlier_threshold: 1000
+  img_point_cov: 100
+  patch_size: 8
+  patch_pyrimid_level: 4
+  normal_en: true
+  raycast_en: false
+  inverse_composition_en: false
+  exposure_estimate_en: true
+  inv_expo_cov: 0.1
+
+imu:
+  imu_en: true
+  imu_int_frame: 30
+  acc_cov: 0.5
+  gyr_cov: 0.3
+  b_acc_cov: 0.0001
+  b_gyr_cov: 0.0001
+
+lio:
+  max_iterations: 5
+  dept_err: 0.02
+  beam_err: 0.05
+  min_eigen_value: 0.0025
+  voxel_size: 0.5
+  max_layer: 2
+  max_points_num: 50
+  layer_init_num: [5, 5, 5, 5, 5]
+
+local_map:
+  map_sliding_en: false
+  half_map_size: 100
+  sliding_thresh: 8
+
+uav:
+  imu_rate_odom: false
+  gravity_align_en: false
+
+publish:
+  dense_map_en: true
+  pub_effect_point_en: false
+  pub_plane_en: false
+  pub_scan_num: 1
+  blind_rgb_points: 0.0
+
+evo:
+  seq_name: "mid360_lio"
+  pose_output_en: false
+
+pcd_save:
+  pcd_save_en: false
+  type: 0
+  colmap_output_en: false
+  filter_size_pcd: 0.15
+  interval: -1
+
+image_save:
+  img_save_en: false
+  interval: 1

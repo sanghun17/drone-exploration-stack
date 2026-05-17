@@ -1,0 +1,30 @@
+<launch>
+  <!-- FAST-LIVO2 on Livox Mid-360, LIO-ONLY (no camera), Mid-360 internal IMU.
+
+       Config lives in the tracked stack repo, not the gitignored fast_livo2
+       clone, so it is referenced by ABSOLUTE container path (/work is the
+       bind-mounted repo). The fast_livo package itself is found via the
+       built workspace (source devel/setup.bash before roslaunch).
+
+       Run inside the dev container on the shared master :11399, e.g.:
+         export ROS_MASTER_URI=http://localhost:11399
+         roslaunch /work/slam_planning/fastlivo/mapping_mid360_lio.launch
+       Needs the Mid-360 driver publishing /livox/lidar + /livox/imu. -->
+
+  <arg name="rviz" default="false" />
+
+  <!-- Mid-360 LIO params (tracked stack repo). -->
+  <rosparam command="load" file="/work/slam_planning/fastlivo/mid360_lio.yaml" />
+
+  <node pkg="fast_livo" type="fastlivo_mapping" name="laserMapping" output="screen">
+    <!-- Camera intrinsics: unused with img_en:0, loaded only so any init-time
+         param read has a value (defensive; from the fast_livo2 clone). -->
+    <rosparam command="load"
+              file="/work/ros_ws/src/fast_livo2_custom/config/camera_pinhole.yaml" />
+  </node>
+
+  <group if="$(arg rviz)">
+    <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz"
+          args="-d /work/ros_ws/src/fast_livo2_custom/rviz_cfg/fast_livo2.rviz" />
+  </group>
+</launch>

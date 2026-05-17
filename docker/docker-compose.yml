@@ -16,6 +16,10 @@ services:
     privileged: true                    # serial access for the PX4 flight controller
     volumes:
       - ..:/work                        # whole repo: ros_ws, third_party, scripts, config
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw # rviz-in-docker (X11). GPU comes free
+                                         # via privileged: true (/dev/dri). Host
+                                         # must allow it once: xhost +local:root
+                                         # (scripts/run_rviz.sh does this).
     working_dir: /work
     environment:
       - DISPLAY=${DISPLAY:-}
